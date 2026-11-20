@@ -74,6 +74,14 @@ func Process(dst, src image.Image, radius uint32) error {
 }
 
 func process(dst *image.NRGBA, src image.Image, radius uint32) {
+	convertToNRGBA(dst, src)
+
+	blurImage(dst, radius)
+}
+
+// convertToNRGBA converts the source image into the destination NRGBA image, preserving the source bounds size.
+// The destination is expected to have the same size as the source bounds.
+func convertToNRGBA(dst *image.NRGBA, src image.Image) {
 	srcBounds := src.Bounds()
 	srcMinX := srcBounds.Min.X
 	srcMinY := srcBounds.Min.Y
@@ -84,13 +92,10 @@ func process(dst *image.NRGBA, src image.Image, radius uint32) {
 
 	switch src0 := src.(type) {
 	case *image.NRGBA:
-		rowSize := srcBounds.Dx() * 4
 		for dstY := 0; dstY < dstH; dstY++ {
-			di := src0.PixOffset(0, dstY)
+			di := dst.PixOffset(0, dstY)
 			si := src0.PixOffset(srcMinX, srcMinY+dstY)
-			for dstX := 0; dstX < dstW; dstX++ {
-				copy(dst.Pix[di:di+rowSize], src0.Pix[si:si+rowSize])
-			}
+			copy(dst.Pix[di:di+dstW*4], src0.Pix[si:si+dstW*4])
 		}
 	case *image.YCbCr:
 		for dstY := 0; dstY < dstH; dstY++ {
@@ -121,8 +126,6 @@ func process(dst *image.NRGBA, src image.Image, radius uint32) {
 			}
 		}
 	}
-
-	blurImage(dst, radius)
 }
 
 func blurImage(src *image.NRGBA, radius uint32) {
@@ -135,7 +138,7 @@ func blurImage(src *image.NRGBA, radius uint32) {
 	var width, height = uint32(src.Bounds().Dx()), uint32(src.Bounds().Dy())
 	var (
 		div, widthMinus1, heightMinus1, radiusPlus1, sumFactor uint32
-		x, y, i, p, yp, yi, yw,
+		x, y, i, p, yi, yw,
 		rSum, gSum, bSum, aSum,
 		rOutSum, gOutSum, bOutSum, aOutSum,
 		rInSum, gInSum, bInSum, aInSum,
@@ -323,10 +326,14 @@ func blurImage(src *image.NRGBA, radius uint32) {
 			stack = stack.next
 		}
 
-		yp = width
-
 		for i = 1; i <= radius; i++ {
-			yi = (yp + x) << 2
+			// Clamp to the last row for images shorter than the radius so the
+			// initial stack never reads past the pixel buffer.
+			row := i
+			if heightMinus1 < row {
+				row = heightMinus1
+			}
+			yi = (row*width + x) << 2
 			pr = uint32(src.Pix[yi])
 			pg = uint32(src.Pix[yi+1])
 			pb = uint32(src.Pix[yi+2])
@@ -348,10 +355,6 @@ func blurImage(src *image.NRGBA, radius uint32) {
 			aInSum += pa
 
 			stack = stack.next
-
-			if i < heightMinus1 {
-				yp += width
-			}
 		}
 
 		yi = x

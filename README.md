@@ -51,6 +51,28 @@ The usage of the API is very simple: it exposes a single public `Process` functi
 stackblur.Process(dst, src, blurRadius)
 ```
 
+### Radius-map (variable radius) blur
+
+For depth-of-field style effects the package also exposes `ProcessRadiusMap`, which blurs each pixel with its own radius obtained from a same-sized radius map. The map luminance scales the configured maximum radius:
+
+```Go
+func ProcessRadiusMap(dst *image.NRGBA, src image.Image, radiusMap image.Image, maxRadius float64) error
+```
+
+- Black map pixels (`luminance = 0`) keep the source pixels untouched; white pixels (`luminance = 255`) apply `maxRadius`, and intermediate values produce `effectiveRadius = maxRadius * luminance / 255`.
+- Fractional radii are rendered by interpolating the StackBlur results of the two bracketing integer radii, with the same weight applied to R, G, B and A. Radius transitions are therefore smooth (no visible steps) and semi-transparent edges keep a consistent alpha, while exact integer radii stay bit-identical to `Process`.
+- `maxRadius` must be finite, positive and at most `stackblur.MaxRadiusMapRadius` (254). Size mismatches, nil/empty inputs, non-finite or out-of-range parameters return the documented sentinel errors. Temporary storage is capped at 256 MiB and `ErrScratchLimitExceeded` is returned before the cap is breached.
+- The fixed-radius `Process` API is unchanged.
+
+```Go
+dst := image.NewNRGBA(src.Bounds())
+rm := image.NewGray(src.Bounds())
+// ...fill rm with per-pixel luminance values...
+if err := stackblur.ProcessRadiusMap(dst, src, rm, 20); err != nil {
+    log.Fatal(err)
+}
+```
+
 ## Results
 
 | Original image | Blurred image |
